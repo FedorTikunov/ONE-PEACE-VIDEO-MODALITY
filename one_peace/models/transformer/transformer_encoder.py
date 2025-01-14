@@ -31,7 +31,7 @@ class TransformerEncoder(FairseqEncoder):
         embed_tokens (torch.nn.Embedding): input embedding
     """
 
-    def __init__(self, cfg, dictionary, use_text_norm, use_image_norm, use_audio_norm):
+    def __init__(self, cfg, dictionary, use_text_norm, use_image_norm, use_audio_norm,  use_video_norm):
         self.cfg = cfg
         super().__init__(dictionary)
         self.register_buffer("version", torch.Tensor([3]))
@@ -59,12 +59,15 @@ class TransformerEncoder(FairseqEncoder):
         self.text_layer_norm = None
         self.image_layer_norm = None
         self.audio_layer_norm = None
+        self.video_layer_norm = None
         if cfg.use_text_moe and use_text_norm:
             self.text_layer_norm = LayerNorm(embed_dim)
         if cfg.use_image_moe and use_image_norm:
             self.image_layer_norm = LayerNorm(embed_dim)
         if cfg.use_audio_moe and use_audio_norm:
             self.audio_layer_norm = LayerNorm(embed_dim)
+        if cfg.use_video_moe and use_video_norm:
+            self.video_layer_norm = LayerNorm(embed_dim)
 
     def build_encoder_layer(self, cfg, drop_path_rate=0.0):
         layer = TransformerEncoderLayer(cfg, drop_path_rate=drop_path_rate)
@@ -75,6 +78,7 @@ class TransformerEncoder(FairseqEncoder):
         text_info,
         image_info,
         audio_info,
+        video_info,
         return_all_hiddens: bool = False,
         encoder_type: Optional[str] = None
     ):
@@ -103,6 +107,7 @@ class TransformerEncoder(FairseqEncoder):
         text_x, text_padding_mask, text_self_attn_bias_list, text_seq_len = None, None, None, 0
         image_x, image_padding_mask, image_self_attn_bias_list, image_seq_len = None, None, None, 0
         audio_x, audio_padding_mask, audio_self_attn_bias_list, audio_seq_len = None, None, None, 0
+        video_x, video_padding_mask, video_self_attn_bias_list, video_seq_len = None, None, None, 0
         if text_info is not None:
             text_x, text_padding_mask, text_self_attn_bias_list = text_info
             text_seq_len = text_x.size(1)
@@ -112,6 +117,9 @@ class TransformerEncoder(FairseqEncoder):
         if audio_info is not None:
             audio_x, audio_padding_mask, audio_self_attn_bias_list = audio_info
             audio_seq_len = audio_x.size(1)
+        if video_info is not None:
+            video_x, video_padding_mask, video_self_attn_bias_list = video_info
+            video_seq_len = video_x.size(1)
 
         if encoder_type == 'text':
             x = text_x
@@ -125,6 +133,10 @@ class TransformerEncoder(FairseqEncoder):
             x = audio_x
             encoder_padding_mask = audio_padding_mask
             attn_bias_num = len(audio_self_attn_bias_list) if audio_self_attn_bias_list is not None else 0
+        elif encoder_type == 'video':
+            x = video_x
+            encoder_padding_mask = video_padding_mask
+            attn_bias_num = len(video_self_attn_bias_list) if video_self_attn_bias_list is not None else 0
         elif encoder_type == 'vl':
             x = torch.cat([text_x, image_x], dim=1)
             encoder_padding_mask = torch.cat([text_padding_mask, image_padding_mask], dim=1)
@@ -132,6 +144,10 @@ class TransformerEncoder(FairseqEncoder):
         elif encoder_type == 'al':
             x = torch.cat([text_x, audio_x], dim=1)
             encoder_padding_mask = torch.cat([text_padding_mask, audio_padding_mask], dim=1)
+            attn_bias_num = len(text_self_attn_bias_list) if text_self_attn_bias_list is not None else 0
+         elif encoder_type == 'val':
+            x = torch.cat([text_x, audio_x, video_x], dim=1)
+            encoder_padding_mask = torch.cat([text_padding_mask, audio_padding_mask, video_padding_mask], dim=1)
             attn_bias_num = len(text_self_attn_bias_list) if text_self_attn_bias_list is not None else 0
         else:
             raise NotImplementedError
@@ -156,6 +172,9 @@ class TransformerEncoder(FairseqEncoder):
             if audio_info is not None and audio_self_attn_bias_list is not None:
                 start_idx, end_idx = text_seq_len + image_seq_len, text_seq_len + image_seq_len + audio_seq_len
                 self_attn_bias[:, :, start_idx:end_idx, start_idx:end_idx] += audio_self_attn_bias_list[i]
+            if video_info is not None and video_self_attn_bias_list is not None:
+                start_idx, end_idx = text_seq_len + image_seq_len + audio_seq_len, text_seq_len + image_seq_len + audio_seq_len + video_seq_len
+                self_attn_bias[:, :, start_idx:end_idx, start_idx:end_idx] += video_self_attn_bias_list[i]
             if has_pads:
                 self_attn_bias.masked_fill_(attn_bias_pad_mask, float("-inf"))
             # self_attn_bias = self_attn_bias.reshape(-1, x.size(1), x.size(1))
@@ -167,6 +186,7 @@ class TransformerEncoder(FairseqEncoder):
         text_encoder_states = []
         image_encoder_states = []
         audio_encoder_states = []
+        video_encoder_states = []
 
         # encoder layers
         for idx, layer in enumerate(self.layers):
@@ -184,7 +204,8 @@ class TransformerEncoder(FairseqEncoder):
                 encoder_type=encoder_type,
                 text_seq_len=text_seq_len,
                 image_seq_len=image_seq_len,
-                audio_seq_len=audio_seq_len
+                audio_seq_len=audio_seq_len,
+                video_seq_len=video_seq_len
             )
 
             if return_all_hiddens:
@@ -197,6 +218,9 @@ class TransformerEncoder(FairseqEncoder):
                 if audio_info is not None:
                     start_idx, end_idx = text_seq_len + image_seq_len, text_seq_len + image_seq_len + audio_seq_len
                     audio_encoder_states.append(x[start_idx:end_idx, :, :])
+                if video_info is not None:
+                    start_idx, end_idx = text_seq_len + image_seq_len + audio_seq_len, text_seq_len + image_seq_len + audio_seq_len + video_seq_len
+                    video_encoder_states.append(x[start_idx:end_idx, :, :])
 
         if encoder_type == 'text':
             x = self.text_layer_norm(x) if self.text_layer_norm is not None else x
@@ -204,6 +228,8 @@ class TransformerEncoder(FairseqEncoder):
             x = self.image_layer_norm(x) if self.image_layer_norm is not None else x
         elif encoder_type == 'audio':
             x = self.audio_layer_norm(x) if self.audio_layer_norm is not None else x
+        elif encoder_type == 'video':
+            x = self.video_layer_norm(x) if self.video_layer_norm is not None else x
         elif encoder_type == 'vl':
             text_x = x[:text_seq_len, :, :]
             image_x = x[-image_seq_len:, :, :]
@@ -216,6 +242,14 @@ class TransformerEncoder(FairseqEncoder):
             text_x = self.text_layer_norm(text_x) if self.text_layer_norm is not None else text_x
             audio_x = self.audio_layer_norm(audio_x) if self.audio_layer_norm is not None else audio_x
             x = torch.cat([text_x, audio_x], dim=0)
+        elif encoder_type == 'val':
+            text_x = x[:text_seq_len, :, :]
+            audio_x = x[text_seq_len:text_seq_len + audio_seq_len, :, :]
+            video_x = x[-video_seq_len:, :, :]
+            text_x = self.text_layer_norm(text_x) if self.text_layer_norm is not None else text_x
+            audio_x = self.audio_layer_norm(audio_x) if self.audio_layer_norm is not None else audio_x
+            video_x = self.video_layer_norm(video_x) if self.video_layer_norm is not None else video_x
+            x = torch.cat([text_x, audio_x, video_x], dim=0)
         else:
             raise NotImplementedError
 
@@ -229,6 +263,7 @@ class TransformerEncoder(FairseqEncoder):
             "text_encoder_states": text_encoder_states,  # List[T x B x C]
             "image_encoder_states": image_encoder_states,  # List[T x B x C]
             "audio_encoder_states": audio_encoder_states,  # List[T x B x C]
+            "video_encoder_states": video_encoder_states,  # List[T x B x C]
         }
 
     def max_positions(self):

@@ -51,6 +51,8 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
             self.image_proj = Linear(enc_embed_dim, enc_embed_dim)
         if cfg.encoder.use_audio_moe:
             self.audio_proj = Linear(enc_embed_dim, enc_embed_dim)
+        if cfg.encoder.use_video_moe:
+            self.video_proj = Linear(enc_embed_dim, enc_embed_dim)
 
         self.text_mask_token = None
         if cfg.encoder.use_text_moe and cfg.decoder.use_text_moe:
@@ -112,6 +114,7 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
         src_audios: Optional[torch.Tensor] = None,
         audio_padding_masks: Optional[torch.Tensor] = None,
         audio_preserve_ids: Optional[torch.Tensor] = None,
+        src_videos: Optional[torch.Tensor] = None,
         encoder_type: str = None,
         return_logit_scale: bool = False
     ):
@@ -121,10 +124,10 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
             logit_scale_exp = self.logit_scale.exp()
             return logit_scale_exp
         else:
-            enc_text_features, enc_image_features, enc_audio_features = self.encoder_wrapper(
+            enc_text_features, enc_image_features, enc_audio_features, enc_video_features = self.encoder_wrapper(
                 src_tokens=src_tokens, text_preserve_ids=text_preserve_ids,
                 src_images=src_images, image_preserve_ids=image_preserve_ids,
-                src_audios=src_audios, audio_padding_masks=audio_padding_masks, audio_preserve_ids=audio_preserve_ids,
+                src_audios=src_audios, audio_padding_masks=audio_padding_masks, audio_preserve_ids=audio_preserve_ids, src_videos=src_videos
                 encoder_type=encoder_type
             )
 
@@ -135,7 +138,10 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
                     enc_image_features) if enc_image_features is not None else None
                 audio_preserve_embed = self.decoder_audio_embed(
                     enc_audio_features) if enc_audio_features is not None else None
-                dec_text_features, dec_image_features, dec_audio_features = self.decoder_wrapper(
+                video_preserve_embed = self.decoder_video_embed(
+                    enc_video_features) if enc_video_features is not None else None
+                
+                dec_text_features, dec_image_features, dec_audio_features, dec_video_features = self.decoder_wrapper(
                     src_tokens=src_tokens,
                     text_preserve_ids=text_preserve_ids,
                     text_preserve_embed=text_preserve_embed,
@@ -149,6 +155,8 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
                     audio_preserve_ids=audio_preserve_ids,
                     audio_preserve_embed=audio_preserve_embed,
                     audio_mask_token=self.audio_mask_token,
+                    src_videos=src_videos,
+                    video_preserve_embed=video_preserve_embed,
                     encoder_type=encoder_type
                 )
                 dec_text_features = self.text_mask_head(dec_text_features) \
@@ -157,7 +165,9 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
                     if dec_image_features is not None else None
                 dec_audio_features = self.audio_mask_head(dec_audio_features) \
                     if dec_audio_features is not None else None
-                return dec_text_features, dec_image_features, dec_audio_features
+                dec_video_features = self.video_mask_head(dec_video_features) \
+                    if dec_video_features is not None else None
+                return dec_text_features, dec_image_features, dec_audio_features, dec_video_features
             else:
                 if encoder_type == 'text':
                     text_cls_logits = enc_text_features[:, 0, :]
@@ -171,10 +181,16 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
                     audio_cls_logits = enc_audio_features[:, 0, :]
                     audio_logits = F.normalize(self.audio_proj(audio_cls_logits), dim=1)
                     return audio_logits, enc_audio_features
+                elif encoder_type == 'video':
+                    video_cls_logits = enc_video_features[:, 0, :]
+                    video_logits = F.normalize(self.video_proj(video_cls_logits), dim=1)
+                    return video_logits, enc_video_features
                 elif encoder_type == 'vl':
                     return enc_text_features, enc_image_features
                 elif encoder_type == 'al':
                     return enc_text_features, enc_audio_features
+                elif encoder_type == 'val':
+                    return enc_text_features, enc_audio_features, enc_video_features
                 else:
                     raise NotImplementedError
 

@@ -77,16 +77,20 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
             cfg.encoder.use_image_moe = True
         if self.head_type in ('audio', 'al'):
             cfg.encoder.use_audio_moe = True
+        if self.head_type in ('video', 'vl', 'val'):
+            cfg.encoder.use_video_moe = True
 
         use_text_norm = self.head_type in ('text', 'vl', 'al')
         use_image_norm = self.head_type in ('image', 'vl')
         use_audio_norm = self.head_type in ('audio', 'al')
+        use_video_norm = self.head_type in ('video', 'vl', 'val')
         self.encoder_wrapper = ModelWrapper(
             cfg.encoder,
             src_dict,
             use_text_norm=use_text_norm,
             use_image_norm=use_image_norm,
             use_audio_norm=use_audio_norm,
+            use_video_norm=use_video_norm,
             num_layers=cfg.encoder.layers
         )
 
@@ -113,6 +117,7 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
         src_images: Optional[torch.Tensor] = None,
         src_images_2: Optional[torch.Tensor] = None,
         src_audios: Optional[torch.Tensor] = None,
+        src_videos: Optional[torch.Tensor] = None,
         audio_padding_masks: Optional[torch.Tensor] = None
     ):
         encoder_type = self.head_type
@@ -120,22 +125,24 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
         ft = self.cfg.freeze_finetune_updates <= self.num_updates if hasattr(self, 'num_updates') else True
 
         with torch.no_grad() if not ft else contextlib.ExitStack():
-            enc_text_features, enc_image_features, enc_audio_features, \
-            text_padding_masks, image_padding_masks, audio_padding_masks = self.encoder_wrapper(
+            enc_text_features, enc_image_features, enc_audio_features, enc_video_features\
+            text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks = self.encoder_wrapper(
                 src_tokens=src_tokens,
                 src_images=src_images,
                 src_audios=src_audios,
+                src_videos=src_videos,
                 audio_padding_masks=audio_padding_masks,
                 encoder_type=encoder_type,
                 return_padding_mask=True
             )
 
         if src_images_2 is not None:
-            enc_text_features_2, enc_image_features_2, enc_audio_features_2 = self.encoder_wrapper(
+            enc_text_features_2, enc_image_features_2, enc_audio_features_2, enc_video_features_2 = self.encoder_wrapper(
                 src_tokens=src_tokens,
                 src_images=src_images_2,
                 is_second_image=True,
                 src_audios=src_audios,
+                src_videos=src_videos,
                 audio_padding_masks=audio_padding_masks,
                 encoder_type=encoder_type
             )
@@ -143,6 +150,7 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
             enc_text_features_2 = None
             enc_image_features_2 = None
             enc_audio_features_2 = None
+            enc_video_features_2 = None
 
         if enc_text_features is not None and not self.cfg.use_image_features:
             logits = self.classify_head(enc_text_features, enc_text_features_2, text_padding_masks)
@@ -150,6 +158,8 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
             logits = self.classify_head(enc_image_features, enc_image_features_2, image_padding_masks)
         elif enc_audio_features is not None:
             logits = self.classify_head(enc_audio_features, enc_audio_features_2, audio_padding_masks)
+        elif enc_video_features is not None:
+            logits = self.classify_head(enc_video_features, enc_video_features_2, video_padding_masks)
         else:
             raise NotImplementedError
         return logits
@@ -188,6 +198,10 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
             if 'encoder_wrapper.fusion_model.audio_layer_norm.weight' in state_dict:
                 del state_dict['encoder_wrapper.fusion_model.audio_layer_norm.weight']
                 del state_dict['encoder_wrapper.fusion_model.audio_layer_norm.bias']
+        if 'encoder_wrapper.fusion_model.video_layer_norm.weight' not in self.state_dict():
+            if 'encoder_wrapper.fusion_model.video_layer_norm.weight' in state_dict:
+                del state_dict['encoder_wrapper.fusion_model.video_layer_norm.weight']
+                del state_dict['encoder_wrapper.fusion_model.video_layer_norm.bias']
         if 'text_proj.weight' in state_dict:
             del state_dict['text_proj.weight']
             del state_dict['text_proj.bias']
@@ -197,6 +211,10 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
         if 'audio_proj.weight' in state_dict:
             del state_dict['audio_proj.weight']
             del state_dict['audio_proj.bias']
+        if 'video_proj.weight' in state_dict:
+            del state_dict['video_proj.weight']
+            del state_dict['video_proj.bias']
+
 
         for param_name in list(state_dict.keys()):
             if self.head_type not in ('text', 'vl', 'al', 'val') and 'text_' in param_name:
@@ -204,4 +222,6 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
             elif self.head_type not in ('image', 'vl', 'val') and 'image_' in param_name:
                 del state_dict[param_name]
             elif self.head_type not in ('audio', 'al', 'val') and 'audio_' in param_name:
+                del state_dict[param_name]
+            elif self.head_type not in ('video', 'vl', 'val') and 'video_' in param_name:
                 del state_dict[param_name]

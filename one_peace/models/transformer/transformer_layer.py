@@ -126,7 +126,8 @@ class TransformerEncoderLayer(nn.Module):
             self.image_ffn = self.build_geglu_ffn(cfg)
         if cfg.use_audio_moe:
             self.audio_ffn = self.build_geglu_ffn(cfg)
-
+         if cfg.use_video_moe:
+            self.video_ffn = self.build_geglu_ffn(cfg)
         self.attn_ln = LayerNorm(self.embed_dim) if cfg.scale_attn else None
         self.final_layer_norm = LayerNorm(self.embed_dim)
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
@@ -170,7 +171,8 @@ class TransformerEncoderLayer(nn.Module):
         encoder_type: Optional[str] = None,
         text_seq_len: Optional[int] = None,
         image_seq_len: Optional[int] = None,
-        audio_seq_len: Optional[int] = None
+        audio_seq_len: Optional[int] = None,
+        video_seq_len: Optional[int] = None
     ):
         """
         Args:
@@ -207,6 +209,8 @@ class TransformerEncoderLayer(nn.Module):
             x = self.image_ffn(x)
         elif encoder_type == 'audio':
             x = self.audio_ffn(x)
+        elif encoder_type == 'video':
+            x = self.video_ffn(x)
         elif encoder_type == 'vl':
             text_x = self.text_ffn(x[:text_seq_len, :, :])
             image_x = self.image_ffn(x[-image_seq_len:, :, :])
@@ -215,6 +219,11 @@ class TransformerEncoderLayer(nn.Module):
             text_x = self.text_ffn(x[:text_seq_len, :, :])
             audio_x = self.audio_ffn(x[-audio_seq_len:, :, :])
             x = torch.cat([text_x, audio_x], dim=0)
+        elif encoder_type == 'val':
+            text_x = self.text_ffn(x[:text_seq_len, :, :])
+            audio_x = self.audio_ffn(x[text_seq_len:text_seq_len + audio_seq_len, :, :])
+            video_x = self.video_ffn(x[-video_seq_len:, :, :])
+            x = torch.cat([text_x, audio_x, video_x], dim=0)
         else:
             raise NotImplementedError
         x = fused_dropout_res(

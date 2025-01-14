@@ -21,6 +21,7 @@ from ..components import trunc_normal_
 from ..adapter.text import TextAdapter
 from ..adapter.image import ImageAdapter
 from ..adapter.audio import AudioAdapter
+from ..adapter.video import VideoAdapter
 from ..transformer.transformer_encoder import TransformerEncoder
 from ..components import Linear, LayerNorm
 
@@ -44,6 +45,7 @@ class ModelWrapper(nn.Module):
         use_text_norm=True,
         use_image_norm=True,
         use_audio_norm=True,
+        use_video_norm=True,
         num_layers=None
     ):
         super(ModelWrapper, self).__init__()
@@ -56,13 +58,15 @@ class ModelWrapper(nn.Module):
             self.image_adapter = ImageAdapter(cfg.image_adapter, embed_dim, attention_heads, num_layers)
         if cfg.use_audio_moe:
             self.audio_adapter = AudioAdapter(cfg.audio_adapter, embed_dim, attention_heads, num_layers)
-
+        if cfg.use_video_moe:
+            self.video_adapter = VideoAdapter(cfg.video_adapter, embed_dim, attention_heads, num_layers)
         self.fusion_model = TransformerEncoder(
             cfg,
             src_dict,
             use_text_norm=use_text_norm,
             use_image_norm=use_image_norm,
-            use_audio_norm=use_audio_norm
+            use_audio_norm=use_audio_norm,
+            use_video_norm=use_video_norm
         )
 
     def forward(
@@ -81,11 +85,15 @@ class ModelWrapper(nn.Module):
         audio_preserve_ids: Optional[torch.Tensor] = None,
         audio_preserve_embed: Optional[torch.Tensor] = None,
         audio_mask_token: Optional[torch.Tensor] = None,
+        src_videos: Optional[torch.Tensor] = None,
+        video_preserve_ids: Optional[torch.Tensor] = None,
+        video_preserve_embed: Optional[torch.Tensor] = None,
+        video_mask_token: Optional[torch.Tensor] = None,
         encoder_type: Optional[str] = None,
         return_padding_mask: bool = False
     ):
 
-        text_info, image_info, audio_info = None, None, None
+        text_info, image_info, audio_info, video_info = None, None, None, None
         if encoder_type in ('text', 'vl', 'al', 'val'):
             text_info = self.text_adapter(
                 src_tokens, text_preserve_ids, text_preserve_embed, text_mask_token
@@ -101,18 +109,26 @@ class ModelWrapper(nn.Module):
                 preserve_embed=audio_preserve_embed,
                 mask_token=audio_mask_token
             )
+        if encoder_type in ('video', 'vl', 'val'):
+            video_info = self.video_adapter(
+                src_videos, 
+                video_preserve_ids, 
+                video_preserve_embed, 
+                video_mask_token
+            )
 
         model_out = self.fusion_model(
             text_info,
             image_info,
             audio_info,
+            video_info,
             encoder_type=encoder_type
         )
 
         model_logits = model_out['encoder_out'][0].transpose(0, 1)
         encoder_padding_mask = model_out['encoder_padding_mask']
-        text_features, image_features, audio_features = None, None, None
-        text_padding_masks, image_padding_masks, audio_padding_masks = None, None, None
+        text_features, image_features, audio_features, video_features = None, None, None, None
+        text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks = None, None, None, None
         if encoder_type in ('text', 'vl', 'al', 'val'):
             text_features = model_logits[:, :text_info[0].size(1), :]
             text_padding_masks = encoder_padding_mask[:, :text_info[0].size(1)]
@@ -122,11 +138,14 @@ class ModelWrapper(nn.Module):
         if encoder_type in ('audio', 'al', 'val'):
             audio_features = model_logits[:, -audio_info[0].size(1):, :]
             audio_padding_masks = encoder_padding_mask[:, -audio_info[0].size(1):]
+         if encoder_type in ('video', 'vl', 'val'):
+            video_features = model_logits[:, -video_info[0].size(1):, :]
+            video_padding_masks = encoder_padding_mask[:, -video_info[0].size(1):]
         if return_padding_mask:
-            return text_features, image_features, audio_features, \
-                   text_padding_masks, image_padding_masks, audio_padding_masks
+            return text_features, image_features, audio_features, video_features \
+                   text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks
         else:
-            return text_features, image_features, audio_features
+            return text_features, image_features, audio_features, video_features
 
 
 class MultiheadAttentionPooling(nn.Module):
@@ -253,9 +272,11 @@ class OnePeaceBaseModel(BaseFairseqModel):
             'encoder_wrapper.text_adapter.embed_positions.weight', 'encoder_wrapper.text_adapter.cls_embedding',
             'encoder_wrapper.image_adapter.pos_embed', 'encoder_wrapper.image_adapter.cls_embedding',
             'encoder_wrapper.audio_adapter.cls_embedding',
+            'encoder_wrapper.video_adapter.cls_embedding',
             'decoder_wrapper.text_adapter.embed_positions.weight', 'decoder_wrapper.text_adapter.cls_embedding'
             'decoder_wrapper.image_adapter.pos_embed', 'decoder_wrapper.image_adapter.cls_embedding',
             'decoder_wrapper.audio_adapter.embed_positions.weight', 'decoder_wrapper.audio_adapter.cls_embedding'
+            'decoder_wrapper.video_adapter.cls_embedding'
         }
 
 

@@ -43,12 +43,15 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
         cfg.encoder.use_text_moe = False
         cfg.encoder.use_image_moe = False
         cfg.encoder.use_audio_moe = False
+        cfg.encoder.use_video_moe = False
         if self.head_type in ('text', 'vl', 'al', 'val'):
             cfg.encoder.use_text_moe = True
         if self.head_type in ('image', 'vl', 'val'):
             cfg.encoder.use_image_moe = True
         if self.head_type in ('audio', 'al', 'val'):
             cfg.encoder.use_audio_moe = True
+        if self.head_type in ('video', 'vl', 'val'):
+            cfg.encoder.use_video_moe = True
 
         self.encoder_wrapper = ModelWrapper(
             cfg.encoder,
@@ -56,6 +59,7 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
             use_text_norm=cfg.encoder.use_text_moe,
             use_image_norm=cfg.encoder.use_image_moe,
             use_audio_norm=cfg.encoder.use_audio_moe,
+            use_video_norm=cfg.encoder.use_video_moe,
             num_layers=cfg.encoder.layers if cfg.copy_rel_pos_table else None
         )
         if cfg.encoder.use_text_moe:
@@ -64,6 +68,8 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
             self.image_proj = Linear(embed_dim, embed_dim)
         if cfg.encoder.use_audio_moe:
             self.audio_proj = Linear(embed_dim, embed_dim)
+         if cfg.encoder.use_video_moe:
+            self.video_proj = Linear(embed_dim, embed_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * math.log(1 / 0.07))
 
         self.apply(init_one_peace_params)
@@ -88,6 +94,7 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
         src_tokens: Optional[torch.Tensor] = None,
         src_images: Optional[torch.Tensor] = None,
         src_audios: Optional[torch.Tensor] = None,
+        src_videos: Optional[torch.Tensor] = None,
         audio_padding_masks: Optional[torch.Tensor] = None,
         return_logit_scale: bool = False,
         encoder_type: Optional[str] = None
@@ -99,10 +106,11 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
             logit_scale_exp = self.logit_scale.exp()
             return logit_scale_exp
         else:
-            enc_text_features, enc_image_features, enc_audio_features = self.encoder_wrapper(
+            enc_text_features, enc_image_features, enc_audio_features, enc_video_features = self.encoder_wrapper(
                 src_tokens=src_tokens,
                 src_images=src_images,
                 src_audios=src_audios,
+                src_videos=src_videos,
                 audio_padding_masks=audio_padding_masks,
                 encoder_type=encoder_type
             )
@@ -119,6 +127,10 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
                 audio_cls_logits = enc_audio_features[:, 0, :]
                 audio_logits = F.normalize(self.audio_proj(audio_cls_logits), dim=1)
                 return audio_logits
+            elif encoder_type == 'video':
+                video_cls_logits = enc_video_features[:, 0, :]
+                video_logits = F.normalize(self.video_proj(video_cls_logits), dim=1)
+                return video_logits
             else:
                 raise NotImplementedError
 
@@ -147,4 +159,6 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
             elif self.head_type not in ('image', 'vl', 'val') and 'image_' in param_name:
                 del state_dict[param_name]
             elif self.head_type not in ('audio', 'al', 'val') and 'audio_' in param_name:
+                del state_dict[param_name]
+            elif our head_type not in ('video', 'vl', 'val') and 'video_' in param_name:
                 del state_dict[param_name]

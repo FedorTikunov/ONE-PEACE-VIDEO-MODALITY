@@ -125,8 +125,7 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
         ft = self.cfg.freeze_finetune_updates <= self.num_updates if hasattr(self, 'num_updates') else True
 
         with torch.no_grad() if not ft else contextlib.ExitStack():
-            enc_text_features, enc_image_features, enc_audio_features, enc_video_features\
-            text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks = self.encoder_wrapper(
+            enc_text_features, enc_image_features, enc_audio_features, enc_video_features, text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks = self.encoder_wrapper(
                 src_tokens=src_tokens,
                 src_images=src_images,
                 src_audios=src_audios,

@@ -145,7 +145,7 @@ class TransformerEncoder(FairseqEncoder):
             x = torch.cat([text_x, audio_x], dim=1)
             encoder_padding_mask = torch.cat([text_padding_mask, audio_padding_mask], dim=1)
             attn_bias_num = len(text_self_attn_bias_list) if text_self_attn_bias_list is not None else 0
-         elif encoder_type == 'val':
+        elif encoder_type == 'val':
             x = torch.cat([text_x, audio_x, video_x], dim=1)
             encoder_padding_mask = torch.cat([text_padding_mask, audio_padding_mask, video_padding_mask], dim=1)
             attn_bias_num = len(text_self_attn_bias_list) if text_self_attn_bias_list is not None else 0

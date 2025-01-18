@@ -138,12 +138,11 @@ class ModelWrapper(nn.Module):
         if encoder_type in ('audio', 'al', 'val'):
             audio_features = model_logits[:, -audio_info[0].size(1):, :]
             audio_padding_masks = encoder_padding_mask[:, -audio_info[0].size(1):]
-         if encoder_type in ('video', 'vl', 'val'):
+        if encoder_type in ('video', 'vl', 'val'):
             video_features = model_logits[:, -video_info[0].size(1):, :]
             video_padding_masks = encoder_padding_mask[:, -video_info[0].size(1):]
         if return_padding_mask:
-            return text_features, image_features, audio_features, video_features \
-                   text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks
+            return text_features, image_features, audio_features, video_features, text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks
         else:
             return text_features, image_features, audio_features, video_features
 

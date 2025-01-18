@@ -68,7 +68,7 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
             self.image_proj = Linear(embed_dim, embed_dim)
         if cfg.encoder.use_audio_moe:
             self.audio_proj = Linear(embed_dim, embed_dim)
-         if cfg.encoder.use_video_moe:
+        if cfg.encoder.use_video_moe:
             self.video_proj = Linear(embed_dim, embed_dim)
         self.logit_scale = nn.Parameter(torch.ones([]) * math.log(1 / 0.07))
 
@@ -160,5 +160,5 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
                 del state_dict[param_name]
             elif self.head_type not in ('audio', 'al', 'val') and 'audio_' in param_name:
                 del state_dict[param_name]
-            elif our head_type not in ('video', 'vl', 'val') and 'video_' in param_name:
+            elif self.head_type not in ('video', 'vl', 'val') and 'video_' in param_name:
                 del state_dict[param_name]

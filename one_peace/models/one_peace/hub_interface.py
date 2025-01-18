@@ -22,6 +22,9 @@ from decord import VideoReader, cpu
 import numpy as np
 import cv2
 
+
+NUM_FRAMES = 6
+
 _MODELS = {
     "ONE-PEACE": "http://one-peace-shanghai.oss-accelerate.aliyuncs.com/one-peace.pt",
     "ONE-PEACE_Grounding": "https://one-peace-shanghai.oss-accelerate.aliyuncs.com/one_peace_checkpoints/finetune_refcocog.pt",

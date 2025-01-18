@@ -126,7 +126,7 @@ class TransformerEncoderLayer(nn.Module):
             self.image_ffn = self.build_geglu_ffn(cfg)
         if cfg.use_audio_moe:
             self.audio_ffn = self.build_geglu_ffn(cfg)
-         if cfg.use_video_moe:
+        if cfg.use_video_moe:
             self.video_ffn = self.build_geglu_ffn(cfg)
         self.attn_ln = LayerNorm(self.embed_dim) if cfg.scale_attn else None
         self.final_layer_norm = LayerNorm(self.embed_dim)

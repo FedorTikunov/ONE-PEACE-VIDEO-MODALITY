@@ -127,7 +127,7 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
             enc_text_features, enc_image_features, enc_audio_features, enc_video_features = self.encoder_wrapper(
                 src_tokens=src_tokens, text_preserve_ids=text_preserve_ids,
                 src_images=src_images, image_preserve_ids=image_preserve_ids,
-                src_audios=src_audios, audio_padding_masks=audio_padding_masks, audio_preserve_ids=audio_preserve_ids, src_videos=src_videos
+                src_audios=src_audios, audio_padding_masks=audio_padding_masks, audio_preserve_ids=audio_preserve_ids, src_videos=src_videos,
                 encoder_type=encoder_type
             )
 

@@ -81,15 +81,13 @@ class VideoTextPretrainDataset(BaseDataset):
         assert num_to_mask != 0
 
         word_starts = is_word_start.nonzero(as_tuple=False)
-        indices are
-        word_starts[
+        indices = word_starts[
             torch.randperm(word_starts.size(0))[:num_to_mask]
         ].squeeze(1)
         mask_indices = torch.zeros(len(source)).bool()
         mask_indices[indices] = True
 
-        is_word_start is
-        torch.cat([is_word_start, torch.Tensor([255]).type_as(is_word_start)])
+        is_word_start = torch.cat([is_word_start, torch.Tensor([255]).type_as(is_word_start)])
         while indices.size(0) > 0:
             uncompleted = is_word_start[indices + 1] == 0
             indices = indices[uncompleted] + 1

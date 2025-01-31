@@ -1,15 +1,8 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
-
 from typing import Optional
-
 from dataclasses import dataclass, field
 from fairseq.dataclass import ChoiceEnum, FairseqDataclass
 from fairseq.models.transformer import EncDecBaseConfig
 from fairseq import utils
-
 
 @dataclass
 class TextAdapterConfig(FairseqDataclass):
@@ -32,7 +25,6 @@ class TextAdapterConfig(FairseqDataclass):
         default=False,
         metadata={"help": ""},
     )
-
 
 @dataclass
 class ImageAdapterConfig(FairseqDataclass):
@@ -64,7 +56,6 @@ class ImageAdapterConfig(FairseqDataclass):
         metadata={"help": ""},
     )
 
-
 @dataclass
 class AudioAdapterConfig(FairseqDataclass):
     feature_embed_dim: int = field(
@@ -75,7 +66,6 @@ class AudioAdapterConfig(FairseqDataclass):
         default='[(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512,2,2)] + [(512,2,2)]',
         metadata={"help": ""},
     )
-
     abs_pos_type: str = field(
         default='conv',
         metadata={"help": ""},
@@ -96,7 +86,6 @@ class AudioAdapterConfig(FairseqDataclass):
         default=False,
         metadata={"help": ""},
     )
-
     bucket_size: int = field(
         default=256,
         metadata={"help": "audio bucket size"},
@@ -116,9 +105,38 @@ class AudioAdapterConfig(FairseqDataclass):
         default=False,
         metadata={"help": ""},
     )
-
     conv_bias: bool = False
     freeze_extractor: bool = False
+
+@dataclass
+class VideoAdapterConfig(FairseqDataclass):
+    bucket_size: int = field(
+        default=16,
+        metadata={"help": "video bucket size"},
+    )
+    rel_bucket_size: int = field(
+        default=16,
+        metadata={"help": "video relative bucket size"},
+    )
+    layernorm_embedding: bool = field(
+        default=False, metadata={"help": "add layernorm to embedding"}
+    )
+    add_type_embedding: bool = field(
+        default=False, metadata={"help": "add type embedding"}
+    )
+    vision_tower_name: str = field(
+        default="/userspace/tfv/exp/models_weights/clip-vit-large-patch14-336",
+        metadata={"help": "name of the pre-trained vision tower to use for video processing"},
+    )
+    shrink_alpha: float = field(
+        default=1.0,
+        metadata={"help": ""},
+    )
+    dropout: float = field(default=0.0, metadata={"help": "dropout probability"})
+    use_attn_bias: bool = field(
+        default=False,
+        metadata={"help": ""},
+    )
 
 
 @dataclass
@@ -126,6 +144,7 @@ class AdjustEncDecConfig(EncDecBaseConfig):
     text_adapter: TextAdapterConfig = TextAdapterConfig()
     image_adapter: ImageAdapterConfig = ImageAdapterConfig()
     audio_adapter: AudioAdapterConfig = AudioAdapterConfig()
+    video_adapter: VideoAdapterConfig = VideoAdapterConfig()
 
     drop_path_rate: float = field(
         default=0.0,
@@ -160,6 +179,10 @@ class AdjustEncDecConfig(EncDecBaseConfig):
     use_audio_moe: bool = field(
         default=True,
         metadata={"help": "use image moe"},
+    )
+    use_video_moe: bool = field(
+        default=True,
+        metadata={"help": "use video moe"},
     )
 
     use_layer_scale: bool = field(

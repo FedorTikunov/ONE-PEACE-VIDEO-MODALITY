@@ -1,42 +1,50 @@
-# Copyright 2022 The OFA-Sys Team.
-# All rights reserved.
-# This source code is licensed under the Apache 2.0 license
-# found in the LICENSE file in the root directory.
-
-from dataclasses import dataclass, field
-from typing import Optional
-import logging
 import json
+import logging
 import torch
 import torch.distributed as dist
+from dataclasses import dataclass, field
+from typing import Optional
 
 from fairseq.tasks import register_task
 from fairseq.utils import move_to_cuda
 
 from ..base_task import BaseTask, BaseTaskConfig
 from ...data.pretrain_data.video_text_pretrain_dataset import VideoTextPretrainDataset
+from ...utils.data_utils import new_islice, all_gather
 from ...metrics import Recall
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class VideoTextPretrainConfig(BaseTaskConfig):
     valid_file: Optional[str] = field(
         default=None,
-        metadata={"help": "validation file, json format."},
+        metadata={"help": "Validation file in JSON format."},
     )
-
     text_mask_ratio: float = field(
-        default=0.4,
-        metadata={"help": "mask ratio of text data in video-language pretraining"}
+        default=0.15,
+        metadata={"help": "Mask ratio for text data."}
     )
-
     video_mask_ratio: float = field(
-        default=0.55,
-        metadata={"help": "mask ratio of video data in video-language pretraining"}
+        default=0.75,
+        metadata={"help": "Mask ratio for video data."}
     )
-
+    vl_text_mask_ratio: float = field(
+        default=0.4,
+        metadata={"help": "Text mask ratio for video-language data."}
+    )
+    vl_video_mask_ratio: float = field(
+        default=0.6875,
+        metadata={"help": "Video mask ratio for video-language data."}
+    )
+    min_scale: float = field(
+        default=0.9,
+        metadata={"help": "Minimum scale for random resized cropping."}
+    )
+    patch_video_size: int = field(
+        default=256,
+        metadata={"help": "Patch size for video frames."}
+    )
 
 @register_task("video_text_pretrain", dataclass=VideoTextPretrainConfig)
 class VideoTextPretrainTask(BaseTask):
@@ -52,20 +60,26 @@ class VideoTextPretrainTask(BaseTask):
         if self.text_ids is None and self.cfg.valid_file is not None:
             self.text_ids = []
             self.texts = []
-            for text_id, text_list in json.load(open(self.cfg.valid_file)).items():
-                for text in text_list:
-                    self.text_ids.append(int(text_id))
-                    self.texts.append(text)
+            with open(self.cfg.valid_file, 'r') as f:
+                valid_data = json.load(f)
+                for text_id, text_list in valid_data.items():
+                    for text in text_list:
+                        self.text_ids.append(int(text_id))
+                        self.texts.append(text)
             self.text_ids = torch.tensor(self.text_ids).cuda()
 
         self.datasets[split] = VideoTextPretrainDataset(
-            split,
-            dataset,
-            self.bpe,
-            self.dict,
+            split=split,
+            dataset=dataset,
+            bpe=self.bpe,
+            dictionary=self.dict,
             max_src_length=self.cfg.max_src_length,
+            patch_video_size=self.cfg.patch_video_size,
             text_mask_ratio=self.cfg.text_mask_ratio,
-            video_mask_ratio=self.cfg.video_mask_ratio
+            video_mask_ratio=self.cfg.video_mask_ratio,
+            vl_text_mask_ratio=self.cfg.vl_text_mask_ratio,
+            vl_video_mask_ratio=self.cfg.vl_video_mask_ratio,
+            min_scale=self.cfg.min_scale
         )
 
     @torch.no_grad()
@@ -82,6 +96,7 @@ class VideoTextPretrainTask(BaseTask):
         else:
             slice_id = 0
             slice_count = 1
+
         batch_sampler = new_islice(range(text_cnt), slice_id, text_cnt, slice_count)
         start_idx = batch_sampler[0]
         end_idx = batch_sampler[-1] + 1
@@ -89,7 +104,7 @@ class VideoTextPretrainTask(BaseTask):
         text_logits_list = []
         for i in range(start_idx, end_idx, 50):
             samples_list = []
-            for text in self.texts[i:min(i + 50, end_idx)]:
+            for text in self.texts[i:min(i+50, end_idx)]:
                 item_tuple = (0, None, text)
                 sample = dataset.__getitem__(0, item_tuple)
                 samples_list.append(sample)
@@ -119,12 +134,3 @@ class VideoTextPretrainTask(BaseTask):
         video_ids = torch.tensor(sample['id']).to(src_videos.device)
         video_logits, _ = model(src_videos=src_videos, encoder_type='video')
         self.metric.compute(video_ids, video_logits)
-
-    @torch.no_grad()
-    def merge_results(self, output_predict=False):
-        stats = self.metric.merge_results(output_predict=output_predict)
-        for key in list(stats.keys()):
-            if key.startswith('img'):
-                stats[key.replace('img', 'video')] = stats[key]
-                del stats[key]
-        return stats

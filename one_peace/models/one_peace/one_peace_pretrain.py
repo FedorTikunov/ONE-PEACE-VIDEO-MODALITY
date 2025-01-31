@@ -75,6 +75,13 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
             self.audio_mask_head = Linear(dec_embed_dim, enc_embed_dim)
             trunc_normal_(self.audio_mask_token)
 
+        self.video_mask_token = None
+        if cfg.encoder.use_video_moe and cfg.decoder.use_video_moe:
+            self.decoder_video_embed = Linear(enc_embed_dim, dec_embed_dim)
+            self.video_mask_token = nn.Parameter(torch.zeros(1, dec_embed_dim))
+            self.video_mask_head = Linear(dec_embed_dim, enc_embed_dim)
+            trunc_normal_(self.video_mask_token)
+
         self.apply(init_one_peace_params)
 
         for i, layer in enumerate(self.encoder_wrapper.fusion_model.layers):

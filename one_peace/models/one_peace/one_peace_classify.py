@@ -71,6 +71,7 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
         cfg.encoder.use_text_moe = False
         cfg.encoder.use_image_moe = False
         cfg.encoder.use_audio_moe = False
+        cfg.encoder.use_video_moe = False
         if self.head_type in ('text', 'vl', 'al'):
             cfg.encoder.use_text_moe = True
         if self.head_type in ('image', 'vl'):

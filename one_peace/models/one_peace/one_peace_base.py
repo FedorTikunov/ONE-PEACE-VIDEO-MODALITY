@@ -52,9 +52,12 @@ class ModelWrapper(nn.Module):
 
         embed_dim = cfg.embed_dim
         attention_heads = cfg.attention_heads
+        print("ENCODERS INIT")
         if cfg.use_text_moe:
             self.text_adapter = TextAdapter(cfg.text_adapter, embed_dim, attention_heads, src_dict, num_layers)
         if cfg.use_image_moe:
+            print("VIDEO Adapter INIT")
+            print(cfg.image_adapter)
             self.image_adapter = ImageAdapter(cfg.image_adapter, embed_dim, attention_heads, num_layers)
         if cfg.use_audio_moe:
             self.audio_adapter = AudioAdapter(cfg.audio_adapter, embed_dim, attention_heads, num_layers)
@@ -68,6 +71,7 @@ class ModelWrapper(nn.Module):
             use_audio_norm=use_audio_norm,
             use_video_norm=use_video_norm
         )
+        print("ENCODERS INIT ENDED")
 
     def forward(
         self,

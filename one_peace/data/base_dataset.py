@@ -1,8 +1,3 @@
-# Copyright 2022 The OFA-Sys Team.
-# All rights reserved.
-# This source code is licensed under the Apache 2.0 license
-# found in the LICENSE file in the root directory.
-
 import os
 import math
 import logging
@@ -12,6 +7,7 @@ import torch
 import torch.nn.functional as F
 import soundfile as sf
 from PIL import Image
+import av  # PyAV for video processing
 
 from fairseq.data import FairseqDataset
 
@@ -22,7 +18,6 @@ warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
 
 CLIP_DEFAULT_MEAN = (0.48145466, 0.4578275, 0.40821073)
 CLIP_DEFAULT_STD = (0.26862954, 0.26130258, 0.27577711)
-
 
 class BaseDataset(FairseqDataset):
     def __init__(self, split, dataset, bpe, dictionary):
@@ -53,6 +48,15 @@ class BaseDataset(FairseqDataset):
     def read_audio(self, audio_path):
         path = os.path.join(self.dataset_dir, audio_path)
         return sf.read(path, dtype="float32")
+
+    def read_video(self, video_path):
+        path = os.path.join(self.dataset_dir, video_path)
+        container = av.open(path)
+        frames = []
+        for frame in container.decode(video=0):
+            img = frame.to_image()
+            frames.append(img)
+        return frames
 
     def encode_text(self, text, length=None, use_bpe=True, append_eos=True):
         s = self.dict.encode_line(

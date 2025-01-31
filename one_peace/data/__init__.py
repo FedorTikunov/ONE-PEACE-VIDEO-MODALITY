@@ -21,11 +21,10 @@ def collate_fn(samples, pad_idx, pad_to_length=None):
     src_images = None
     if samples[0].get("source_image", None) is not None:
         src_images = torch.stack([sample['source_image'] for sample in samples], dim=0)
-
+    
     src_videos = None
     if samples[0].get("source_video", None) is not None:
-        src_videos = [torch.stack([frame for frame in sample['source_video']], dim=0) for sample in samples]
-        src_videos = torch.stack(src_videos, dim=0)
+        src_videos = torch.stack([sample['source_video'] for sample in samples], dim=0)
 
     src_audios = None
     audio_padding_masks = None
@@ -61,6 +60,11 @@ def collate_fn(samples, pad_idx, pad_to_length=None):
         batch["net_input"]["image_mask_indices"] = merge("image_mask_indices", pad=False)
     if samples[0].get("image_preserve_ids", None) is not None:
         batch["net_input"]["image_preserve_ids"] = merge("image_preserve_ids", pad=-1)
+    # for video pretraining
+    if samples[0].get("video_mask_indices", None) is not None:
+        batch["net_input"]["video_mask_indices"] = merge("video_mask_indices", pad=False)
+    if samples[0].get("video_preserve_ids", None) is not None:
+        batch["net_input"]["video_preserve_ids"] = merge("video_preserve_ids", pad=-1)
     # for audio pretraining
     if samples[0].get("audio_mask_indices", None) is not None:
         batch["net_input"]["audio_mask_indices"] = merge("audio_mask_indices", pad=False)
@@ -75,11 +79,6 @@ def collate_fn(samples, pad_idx, pad_to_length=None):
         batch["net_input"]["vl_image_mask_indices"] = merge("vl_image_mask_indices", pad=False)
     if samples[0].get("vl_image_preserve_ids", None) is not None:
         batch["net_input"]["vl_image_preserve_ids"] = merge("vl_image_preserve_ids", pad=-1)
-    # for video-language pretraining
-    if samples[0].get("vl_video_mask_indices", None) is not None:
-        batch["net_input"]["vl_video_mask_indices"] = merge("vl_video_mask_indices", pad=False)
-    if samples[0].get("vl_video_preserve_ids", None) is not None:
-        batch["net_input"]["vl_video_preserve_ids"] = merge("vl_video_preserve_ids", pad=-1)
     # for audio-language pretraining
     if samples[0].get("al_text_mask_indices", None) is not None:
         batch["net_input"]["al_text_mask_indices"] = merge("al_text_mask_indices", pad=False)

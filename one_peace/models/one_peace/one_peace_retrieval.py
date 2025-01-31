@@ -52,7 +52,7 @@ class OnePeaceRetrievalModel(OnePeaceBaseModel):
             cfg.encoder.use_audio_moe = True
         if self.head_type in ('video', 'vl', 'val'):
             cfg.encoder.use_video_moe = True
-
+        print("cfg:", cfg)
         self.encoder_wrapper = ModelWrapper(
             cfg.encoder,
             src_dict,

@@ -111,33 +111,37 @@ class AudioAdapterConfig(FairseqDataclass):
 @dataclass
 class VideoAdapterConfig(FairseqDataclass):
     bucket_size: int = field(
-        default=16,
-        metadata={"help": "video bucket size"},
+        default=14,
+        metadata={"help": "Size of the positional embedding buckets (spatial dimension)."},
     )
-    rel_bucket_size: int = field(
+    num_frames: int = field(
         default=16,
-        metadata={"help": "video relative bucket size"},
+        metadata={"help": "Number of frames to process per video."},
     )
     layernorm_embedding: bool = field(
-        default=False, metadata={"help": "add layernorm to embedding"}
+        default=True,
+        metadata={"help": "Whether to apply layernorm to embeddings."},
     )
     add_type_embedding: bool = field(
-        default=False, metadata={"help": "add type embedding"}
+        default=True,
+        metadata={"help": "Whether to include type embeddings."},
     )
-    vision_tower_name: str = field(
-        default="/userspace/tfv/exp/models_weights/clip-vit-large-patch14-336",
-        metadata={"help": "name of the pre-trained vision tower to use for video processing"},
+    clip_model_name: str = field(
+        default="/userspace/tfv/project_menon/models_weights/one-peace-video.pt",
+        metadata={"help": "Name of the pre-trained CLIP model to use for video processing."},
     )
     shrink_alpha: float = field(
         default=1.0,
-        metadata={"help": ""},
+        metadata={"help": "Scaling factor for embeddings."},
     )
-    dropout: float = field(default=0.0, metadata={"help": "dropout probability"})
+    dropout: float = field(
+        default=0.1,
+        metadata={"help": "Dropout probability for embeddings."},
+    )
     use_attn_bias: bool = field(
-        default=False,
-        metadata={"help": ""},
+        default=True,
+        metadata={"help": "Whether to use relative positional biases in attention."},
     )
-
 
 @dataclass
 class AdjustEncDecConfig(EncDecBaseConfig):

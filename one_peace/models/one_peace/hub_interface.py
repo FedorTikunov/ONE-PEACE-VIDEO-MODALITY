@@ -23,7 +23,7 @@ import numpy as np
 import cv2
 
 
-NUM_FRAMES = 6
+NUM_FRAMES = 240
 NUM_FRAMES_PER_SECOND = 1
 MAX_FRAMES = 32
 
@@ -226,78 +226,44 @@ class OnePeaceHubInterface:
         audio_padding_masks = collate_tokens(audio_padding_mask_list, pad_idx=True).to(self.device)
         return src_audios, audio_padding_masks
     
-    def process_video(self, video_paths, s=None, e=None, num_frames=NUM_FRAMES):
-        processed_videos = []
+    def process_video(self, video_paths, num_frames):
+        """
+        Processes a list of video paths and returns a list of lists of frames (PIL Images).
+        Args:
+            video_paths (List[str]): A list of paths to video files.
+            num_frames (int): The number of frames to extract from each video.
+        Returns:
+            frames_batch (List[List[PIL Image]]): A batch of videos, each represented as a list of frames.
+        """
+        frames_batch = []
 
         for video_path in video_paths:
-            if isinstance(video_path, str):
-                if s is not None and e is not None:
-                    s = max(s, 0)
-                    e = max(e, 0)
-                    if s > e:
-                        s, e = e, s
-                    elif s == e:
-                        e = s + 1
+            cap = cv2.VideoCapture(video_path)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-                # 1. Loading Video
-                if os.path.isdir(video_path):                
-                    frame_files = sorted(os.listdir(video_path))
-                    fps = 3
-                    num_frames_of_video = len(frame_files)
-                elif video_path.endswith('.gif'):
-                    gif_reader = imageio.get_reader(video_path)
-                    fps = 25
-                    num_frames_of_video = len(gif_reader)
+            if frame_count <= 0:
+                print(f"Warning: Failed to read video '{video_path}'. Skipping.")
+                frames_batch.append([Image.new('RGB', (224, 224)) for _ in range(num_frames)])
+                cap.release()
+                continue
+
+            indices = np.linspace(0, frame_count - 1, num_frames, dtype=np.int32)
+
+            frames = []
+            for idx in indices:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                ret, frame = cap.read()
+                if ret:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB
+                    frame = Image.fromarray(frame)
+                    frames.append(frame)
                 else:
-                    vreader = VideoReader(video_path, ctx=cpu(0), num_threads=1)
-                    fps = vreader.get_avg_fps()
-                    num_frames_of_video = len(vreader)
+                    # Append a black image if frame reading fails
+                    frames.append(Image.new('RGB', (224, 224)))
+            cap.release()
+            frames_batch.append(frames)
 
-                # 2. Determine frame range & Calculate frame indices
-                f_start = 0 if s is None else max(int(s * fps) - 1, 0)
-                f_end = num_frames_of_video - 1 if e is None else min(int(e * fps) - 1, num_frames_of_video - 1)
-                frame_indices = list(range(f_start, f_end + 1))
-
-                duration = len(frame_indices)
-                # 3. Sampling frame indices 
-                if num_frames is None:
-                    sampled_frame_indices = [frame_indices[i] for i in frame_sample(duration, mode='fps', fps=fps)]
-                else:
-                    sampled_frame_indices = [frame_indices[i] for i in frame_sample(duration, mode='uniform', num_frames=num_frames)]
-
-                # 4. Acquire frame data
-                if os.path.isdir(video_path): 
-                    video_data = [Image.open(os.path.join(video_path, frame_files[f_idx])) for f_idx in sampled_frame_indices]
-                elif video_path.endswith('.gif'):
-                    video_data = [Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)) for idx, frame in enumerate(gif_reader) if idx in sampled_frame_indices]
-                else:
-                    video_data = [Image.fromarray(frame) for frame in vreader.get_batch(sampled_frame_indices).asnumpy()]
-
-            elif isinstance(video_path, np.ndarray):
-                video_data = [Image.fromarray(f) for f in video_path]
-            elif isinstance(video_path, list) and isinstance(video_path[0], np.ndarray):
-                video_data = [Image.fromarray(f) for f in video_path]
-            elif isinstance(video_path, list) and isinstance(video_path[0], str):
-                video_data = [Image.open(f) for f in video_path]
-            elif isinstance(video_path, list) and isinstance(video_path[0], Image.Image):
-                video_data = video_path
-            else:
-                raise ValueError(f"Unsupported video path type: {type(video_path)}")
-
-            while num_frames is not None and len(video_data) < num_frames:
-                video_data.append(Image.fromarray(np.zeros((*video_data[-1].size, 3), dtype=np.uint8)))
-
-            # MAX_FRAMES filter
-            video_data = video_data[:MAX_FRAMES]
-
-            # Transform and stack frames to create src_videos
-            processed_frames = [self.transform(frame) for frame in video_data]
-            src_video = torch.stack(processed_frames).permute(1, 0, 2, 3).to(self.device)
-            src_video = self.cast_data_dtype(src_video)
-            processed_videos.append(src_video)
-
-        return processed_videos
-
+        return frames_batch  # List of lists of PIL Images (batch_size x num_frames)
 
     def process_image_text_pairs(self, image_text_list, return_image_sizes=False):
         image_list = [image_text_pair[0] for image_text_pair in image_text_list]

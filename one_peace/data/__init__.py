@@ -24,7 +24,10 @@ def collate_fn(samples, pad_idx, pad_to_length=None):
     
     src_videos = None
     if samples[0].get("source_video", None) is not None:
-        src_videos = torch.stack([sample['source_video'] for sample in samples], dim=0)
+        if isinstance(samples[0]["source_video"], list):
+            src_videos = [sample["source_video"] for sample in samples]
+        else:
+            src_videos = torch.stack([sample["source_video"] for sample in samples], dim=0)
 
     src_audios = None
     audio_padding_masks = None
@@ -88,6 +91,15 @@ def collate_fn(samples, pad_idx, pad_to_length=None):
         batch["net_input"]["al_audio_mask_indices"] = merge("al_audio_mask_indices", pad=False)
     if samples[0].get("al_audio_preserve_ids", None) is not None:
         batch["net_input"]["al_audio_preserve_ids"] = merge("al_audio_preserve_ids", pad=-1)
+    # for video-language pretraining
+    if samples[0].get("vid_text_mask_indices", None) is not None:
+        batch["net_input"]["vid_text_mask_indices"] = merge("vid_text_mask_indices", pad=False)
+    if samples[0].get("vid_text_preserve_ids", None) is not None:
+        batch["net_input"]["vid_text_preserve_ids"] = merge("vid_text_preserve_ids", pad=-1)
+    if samples[0].get("vid_video_mask_indices", None) is not None:
+        batch["net_input"]["vid_video_mask_indices"] = merge("vid_video_mask_indices", pad=False)
+    if samples[0].get("vid_video_preserve_ids", None) is not None:
+        batch["net_input"]["vid_video_preserve_ids"] = merge("vid_video_preserve_ids", pad=-1)
     # for nlvr2
     if samples[0].get("source_image2", None) is not None:
         batch["net_input"]["src_images_2"] = torch.stack([sample['source_image2'] for sample in samples], dim=0)

@@ -11,7 +11,7 @@ import re
 import numpy as np
 from typing import Optional
 from omegaconf import II
-
+import json
 import torch
 from fairseq.data import FairseqDataset, data_utils
 from fairseq.dataclass import FairseqDataclass, ChoiceEnum
@@ -64,7 +64,7 @@ class BaseTaskConfig(FairseqDataclass):
     )
     feature_encoder_spec: str = II("model.encoder.audio_adapter.feature_encoder_spec")
 
-    head_type: ChoiceEnum(["text", "image", "audio", "vl", "al", "val"]) = field(
+    head_type: ChoiceEnum(["text", "image", "audio", "video", "vl", "al", "vid", "val", "vidval"]) = field(
         default='vl',
         metadata={"help": "classifier head types"}
     )
@@ -124,15 +124,31 @@ class BaseTask(FairseqTask):
                 raise ValueError(f"only one expansion is supported, get {path}")
         return paths
 
-    def load_dataset(self, split, epoch=1, **kwargs):
+    def _get_data_file(self, split, epoch=1):
         if split == 'valid':
-            file_path = self.cfg.valid_data
+            return self.cfg.valid_data
         else:
             paths = self._parse_dataset_paths()
-            file_path = paths[(epoch - 1) % len(paths)]
+            return paths[(epoch - 1) % len(paths)]
 
-        dataset = TSVReader(file_path, self.cfg.selected_cols, self.cfg.reader_separator)
-        return dataset
+    def load_dataset(self, split, epoch=1, **kwargs):
+        file_path = self._get_data_file(split, epoch)
+        
+        # Check if the dataset is in JSON or TSV format
+        if file_path.endswith('.json'):
+            return self._load_json_dataset(file_path)
+        elif file_path.endswith('.tsv'):
+            return TSVReader(file_path, self.cfg.selected_cols, self.cfg.reader_separator)
+        else:
+            raise ValueError(f"Unsupported file format: {file_path}")
+        
+    def _load_json_dataset(self, file_path):
+        # Load JSON dataset
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        logger.info(f"Loaded JSON dataset from {file_path}")
+        return data
 
     def get_batch_iterator(
         self,

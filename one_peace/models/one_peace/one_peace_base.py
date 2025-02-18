@@ -98,22 +98,22 @@ class ModelWrapper(nn.Module):
     ):
 
         text_info, image_info, audio_info, video_info = None, None, None, None
-        if encoder_type in ('text', 'vl', 'al', 'val'):
+        if encoder_type in ('text', 'vl', 'al', 'vid', 'val', 'vidval'):
             text_info = self.text_adapter(
                 src_tokens, text_preserve_ids, text_preserve_embed, text_mask_token
             )
-        if encoder_type in ('image', 'vl', 'val'):
+        if encoder_type in ('image', 'vl', 'val', 'vidval'):
             image_info = self.image_adapter(
                 src_images, image_preserve_ids, image_preserve_embed, image_mask_token, is_second_image
             )
-        if encoder_type in ('audio', 'al', 'val'):
+        if encoder_type in ('audio', 'al', 'val', 'vidval'):
             audio_info = self.audio_adapter(
                 src_audios, audio_padding_masks,
                 preserve_ids=audio_preserve_ids,
                 preserve_embed=audio_preserve_embed,
                 mask_token=audio_mask_token
             )
-        if encoder_type in ('video', 'vl', 'val'):
+        if encoder_type in ('video', 'vid', 'vidval'):
             video_info = self.video_adapter(
                 src_videos, 
                 video_preserve_ids, 
@@ -133,16 +133,16 @@ class ModelWrapper(nn.Module):
         encoder_padding_mask = model_out['encoder_padding_mask']
         text_features, image_features, audio_features, video_features = None, None, None, None
         text_padding_masks, image_padding_masks, audio_padding_masks, video_padding_masks = None, None, None, None
-        if encoder_type in ('text', 'vl', 'al', 'val'):
+        if encoder_type in ('text', 'vl', 'al', 'vid', 'val', 'vidval'):
             text_features = model_logits[:, :text_info[0].size(1), :]
             text_padding_masks = encoder_padding_mask[:, :text_info[0].size(1)]
-        if encoder_type in ('image', 'vl', 'val'):
+        if encoder_type in ('image', 'vl', 'val', 'vidval'):
             image_features = model_logits[:, -image_info[0].size(1):, :]
             image_padding_masks = encoder_padding_mask[:, -image_info[0].size(1):]
-        if encoder_type in ('audio', 'al', 'val'):
+        if encoder_type in ('audio', 'al', 'val', 'vidval'):
             audio_features = model_logits[:, -audio_info[0].size(1):, :]
             audio_padding_masks = encoder_padding_mask[:, -audio_info[0].size(1):]
-        if encoder_type in ('video', 'vl', 'val'):
+        if encoder_type in ('video', 'vid', 'vidval'):
             video_features = model_logits[:, -video_info[0].size(1):, :]
             video_padding_masks = encoder_padding_mask[:, -video_info[0].size(1):]
         if return_padding_mask:

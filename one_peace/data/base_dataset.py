@@ -8,8 +8,9 @@ import torch.nn.functional as F
 import soundfile as sf
 from PIL import Image
 import av  # PyAV for video processing
-
+import cv2
 from fairseq.data import FairseqDataset
+import numpy as np
 
 from . import collate_fn
 
@@ -49,13 +50,37 @@ class BaseDataset(FairseqDataset):
         path = os.path.join(self.dataset_dir, audio_path)
         return sf.read(path, dtype="float32")
 
-    def read_video(self, video_path):
-        path = os.path.join(self.dataset_dir, video_path)
-        container = av.open(path)
+    def read_video(self, video_path, num_frames):
+        """
+        Processes a video file using OpenCV and returns a list of PIL Images.
+        If the video cannot be read, returns num_frames blank images.
+        """
+        cap = cv2.VideoCapture(video_path)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        #print("FRAMES/NUM_FRAMES: ", frame_count, num_frames)
+
+        if frame_count <= 0:
+            print(f"Warning: Failed to read video '{video_path}'. Using blank frames instead.")
+            frames = [Image.new('RGB', (224, 224)) for _ in range(num_frames)]
+            cap.release()
+            return frames
+
+        # Evenly sample indices over the video's frames.
+        indices = np.linspace(0, frame_count - 1, num_frames, dtype=np.int32)
         frames = []
-        for frame in container.decode(video=0):
-            img = frame.to_image()
-            frames.append(img)
+        for idx in indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+                frame = Image.fromarray(frame)
+                frames.append(frame)
+            else:
+                # If reading fails, use a blank image.
+                frames.append(Image.new('RGB', (224, 224)))
+        cap.release()
+        
         return frames
 
     def encode_text(self, text, length=None, use_bpe=True, append_eos=True):

@@ -1,16 +1,14 @@
-import json
-import logging
-import torch
-import torch.distributed as dist
 from dataclasses import dataclass, field
 from typing import Optional
+import logging
+import json
+import torch
 
 from fairseq.tasks import register_task
 from fairseq.utils import move_to_cuda
 
 from ..base_task import BaseTask, BaseTaskConfig
 from ...data.pretrain_data.video_text_pretrain_dataset import VideoTextPretrainDataset
-from ...utils.data_utils import new_islice, all_gather
 from ...metrics import Recall
 
 logger = logging.getLogger(__name__)
@@ -21,29 +19,17 @@ class VideoTextPretrainConfig(BaseTaskConfig):
         default=None,
         metadata={"help": "Validation file in JSON format."},
     )
-    text_mask_ratio: float = field(
-        default=0.15,
-        metadata={"help": "Mask ratio for text data."}
+    num_frames: int = field(
+        default=16,
+        metadata={"help": "Number of frames per video."},
     )
     video_mask_ratio: float = field(
         default=0.75,
-        metadata={"help": "Mask ratio for video data."}
+        metadata={"help": "Masking ratio for video frames."},
     )
-    vl_text_mask_ratio: float = field(
+    text_mask_ratio: float = field(
         default=0.4,
-        metadata={"help": "Text mask ratio for video-language data."}
-    )
-    vl_video_mask_ratio: float = field(
-        default=0.6875,
-        metadata={"help": "Video mask ratio for video-language data."}
-    )
-    min_scale: float = field(
-        default=0.9,
-        metadata={"help": "Minimum scale for random resized cropping."}
-    )
-    patch_video_size: int = field(
-        default=256,
-        metadata={"help": "Patch size for video frames."}
+        metadata={"help": "Masking ratio for text."},
     )
 
 @register_task("video_text_pretrain", dataclass=VideoTextPretrainConfig)
@@ -55,67 +41,52 @@ class VideoTextPretrainTask(BaseTask):
         self.texts = None
 
     def load_dataset(self, split, epoch=1, **kwargs):
+        # Load raw dataset (JSON list) via BaseTask (which now supports JSON)
         dataset = super().load_dataset(split, epoch, **kwargs)
-
         if self.text_ids is None and self.cfg.valid_file is not None:
+            print("self.text_ids:", self.text_ids)
+            print("self.texts:", self.texts)
             self.text_ids = []
             self.texts = []
-            with open(self.cfg.valid_file, 'r') as f:
+            with open(self.cfg.valid_file, "r") as f:
                 valid_data = json.load(f)
-                for text_id, text_list in valid_data.items():
-                    for text in text_list:
-                        self.text_ids.append(int(text_id))
-                        self.texts.append(text)
+                for item in valid_data:
+                    self.text_ids.append(item["id"])
+                    self.texts.append(item["description"])
             self.text_ids = torch.tensor(self.text_ids).cuda()
-
         self.datasets[split] = VideoTextPretrainDataset(
-            split=split,
-            dataset=dataset,
-            bpe=self.bpe,
-            dictionary=self.dict,
+            split,
+            dataset,
+            self.bpe,
+            self.dict,
             max_src_length=self.cfg.max_src_length,
-            patch_video_size=self.cfg.patch_video_size,
-            text_mask_ratio=self.cfg.text_mask_ratio,
+            num_frames=self.cfg.num_frames,
             video_mask_ratio=self.cfg.video_mask_ratio,
-            vl_text_mask_ratio=self.cfg.vl_text_mask_ratio,
-            vl_video_mask_ratio=self.cfg.vl_video_mask_ratio,
-            min_scale=self.cfg.min_scale
+            text_mask_ratio=self.cfg.text_mask_ratio,
         )
 
     @torch.no_grad()
     def begin_valid_epoch(self, epoch, model, subset):
+        # During validation, we extract text features for retrieval evaluation.
         assert self.text_ids is not None and self.texts is not None
         model.eval()
 
         dataset = self.datasets[subset]
-        text_cnt = len(self.text_ids)
-
-        if dist.is_initialized():
-            slice_id = dist.get_rank()
-            slice_count = dist.get_world_size()
-        else:
-            slice_id = 0
-            slice_count = 1
-
-        batch_sampler = new_islice(range(text_cnt), slice_id, text_cnt, slice_count)
-        start_idx = batch_sampler[0]
-        end_idx = batch_sampler[-1] + 1
 
         text_logits_list = []
-        for i in range(start_idx, end_idx, 50):
-            samples_list = []
-            for text in self.texts[i:min(i+50, end_idx)]:
-                item_tuple = (0, None, text)
-                sample = dataset.__getitem__(0, item_tuple)
-                samples_list.append(sample)
-            samples = dataset.collater(samples_list)
-            samples = move_to_cuda(samples)
-            src_tokens = samples["net_input"]["src_tokens"]
-            text_logits, _ = model(src_tokens=src_tokens, encoder_type='text')
-            text_logits_list.append(text_logits)
+        dummy_samples = []
+        for text in self.texts:
+            dummy_tuple = (0, "/userspace/tfv/dataset/finevideo/finevideo_segments/sample_34145/scene_1_activity_2.mp4", text)
+            sample = dataset.__getitem__(0, dummy_tuple)
+            dummy_samples.append(sample)
+        samples = dataset.collater(dummy_samples)
+        samples = move_to_cuda(samples)
+        # After collating, text tokens are merged into net_input["src_tokens"]
+        src_tokens = samples["net_input"]["src_tokens"]
+        text_logits, _ = model(src_tokens=src_tokens, encoder_type='text')
+        text_logits_list.append(text_logits)
 
         text_logits = torch.cat(text_logits_list, dim=0)
-        text_logits = all_gather(text_logits) if dist.is_initialized() else text_logits
         self.metric.initialize(self.text_ids, text_logits)
 
     @torch.no_grad()
@@ -130,7 +101,19 @@ class VideoTextPretrainTask(BaseTask):
 
     @torch.no_grad()
     def eval_step(self, model, sample):
-        src_videos = sample["net_input"]["src_videos"]
-        video_ids = torch.tensor(sample['id']).to(src_videos.device)
-        video_logits, _ = model(src_videos=src_videos, encoder_type='video')
+        # Collated video tensors are stored under net_input["src_videos"]
+        video_frames = sample["net_input"]["src_videos"]
+        #video_ids = torch.tensor(sample['id']).to(video_frames.device)
+        video_logits, _ = model(src_videos=video_frames, encoder_type='video')
+        video_ids = torch.tensor(sample['id']).to(video_logits.device)
         self.metric.compute(video_ids, video_logits)
+
+    @torch.no_grad()
+    def merge_results(self, output_predict=False):
+        stats = self.metric.merge_results(output_predict=output_predict)
+        # Rename any keys starting with 'img' to 'video'
+        for key in list(stats.keys()):
+            if key.startswith('img'):
+                stats[key.replace('img', 'video')] = stats[key]
+                del stats[key]
+        return stats

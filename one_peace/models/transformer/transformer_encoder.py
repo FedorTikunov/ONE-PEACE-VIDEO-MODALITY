@@ -145,9 +145,9 @@ class TransformerEncoder(FairseqEncoder):
             x = torch.cat([text_x, audio_x], dim=1)
             encoder_padding_mask = torch.cat([text_padding_mask, audio_padding_mask], dim=1)
             attn_bias_num = len(text_self_attn_bias_list) if text_self_attn_bias_list is not None else 0
-        elif encoder_type == 'val':
-            x = torch.cat([text_x, audio_x, video_x], dim=1)
-            encoder_padding_mask = torch.cat([text_padding_mask, audio_padding_mask, video_padding_mask], dim=1)
+        elif encoder_type == 'vid':
+            x = torch.cat([text_x, video_x], dim=1)
+            encoder_padding_mask = torch.cat([text_padding_mask, video_padding_mask], dim=1)
             attn_bias_num = len(text_self_attn_bias_list) if text_self_attn_bias_list is not None else 0
         else:
             raise NotImplementedError
@@ -242,14 +242,12 @@ class TransformerEncoder(FairseqEncoder):
             text_x = self.text_layer_norm(text_x) if self.text_layer_norm is not None else text_x
             audio_x = self.audio_layer_norm(audio_x) if self.audio_layer_norm is not None else audio_x
             x = torch.cat([text_x, audio_x], dim=0)
-        elif encoder_type == 'val':
+        elif encoder_type == 'vid':
             text_x = x[:text_seq_len, :, :]
-            audio_x = x[text_seq_len:text_seq_len + audio_seq_len, :, :]
             video_x = x[-video_seq_len:, :, :]
             text_x = self.text_layer_norm(text_x) if self.text_layer_norm is not None else text_x
-            audio_x = self.audio_layer_norm(audio_x) if self.audio_layer_norm is not None else audio_x
             video_x = self.video_layer_norm(video_x) if self.video_layer_norm is not None else video_x
-            x = torch.cat([text_x, audio_x, video_x], dim=0)
+            x = torch.cat([text_x, video_x], dim=0)
         else:
             raise NotImplementedError
 

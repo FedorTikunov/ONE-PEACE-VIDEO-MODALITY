@@ -1,0 +1,163 @@
+task:
+  _name: video_text_pretrain
+  data: /userspace/tfv/dataset/finevideo/train_data_small.json      # Path to your video-text JSON training data
+  valid_data: /userspace/tfv/dataset/finevideo/valid_data_small.json   # Path to validation JSON data
+  selected_cols: ""                                             # Not used with JSON (keys are hardcoded in the dataset)
+  bpe_dir: /userspace/tfv/diplom/ONE-PEACE-VIDEO-MODALITY/one_peace/utils/BPE  # Path to BPE directory
+  head_type: vid
+  valid_file: /userspace/tfv/dataset/finevideo/valid_data_small.json
+  max_positions: 1024
+  patch_image_size: 256
+  max_src_length: 70         # Maximum text length
+  num_frames: 10              # Number of frames per video (used in sampling in the dataset)
+  video_mask_ratio: 0.75     # Masking ratio for video frames
+  text_mask_ratio: 0.4       # Masking ratio for text
+  use_two_images: false
+
+criterion:
+  _name: video_text_pretrain_loss
+  # The following are specific to the loss criterion implementation:
+  dcl_video_alpha: 1.0       # Weight for video DCL loss
+  dcl_vid_text_alpha: 0.5     # Weight for alignment text DCL loss
+  dcl_vid_video_alpha: 0.5
+  dcl_logit_scale: 2.5       # Scaling factor for the DCL loss
+  label_smoothing: 0.0       # No label smoothing
+
+optimizer:
+  _name: adjust_adam
+  adam_betas: (0.9, 0.98)
+  adam_eps: 1e-08
+  weight_decay: 0.05
+  use_distributed_fused_adam: true
+
+lr_scheduler:
+  _name: adjust_cosine
+  warmup_ratio: 0.1
+  min_lr: 1e-6
+
+optimization:
+  max_epoch: 5            # Maximum number of training epochs
+  lr: [0.0002]              # Learning rate
+  update_freq: [1]          # Gradient accumulation steps
+  clip_norm: 3.0            # Gradient clipping
+  skip_remainder_batch: false
+
+dataset:
+  num_workers: 6           # Number of data loading workers
+  batch_size: 5            # Batch size
+  fixed_validation_seed: 3407
+  validate_interval: 1      # Validate every epoch
+  batch_size_valid: 2
+  ensure_equal_batch: true
+
+common:
+  fp16: false
+  memory_efficient_fp16: false
+  bf16: true
+  memory_efficient_bf16: true
+  no_bias_decay: true
+  log_format: simple
+  log_interval: 10
+  user_dir: ../../user_module
+  disable_iterator_cache: true
+  seed: 3407
+  tensorboard_logdir: ${checkpoint.save_dir}
+
+checkpoint:
+  keep_last_epochs: 10
+  save_interval: 1
+  best_checkpoint_metric: txt_r1
+  maximize_best_checkpoint_metric: true
+  no_save_optimizer_state: true
+  load_checkpoint_on_all_dp_ranks: true
+
+distributed_training:
+  ddp_backend: legacy_ddp
+
+model:
+  _name: one_peace_pretrain
+  reset_logit_scale: false
+  stage2_pretrain: false
+  stage3_pretrain: true
+  
+  encoder:
+    checkpoint_activations: true
+    text_adapter:
+      bucket_size: 256
+      layernorm_embedding: false
+      add_type_embedding: false
+      shrink_alpha: 1.0
+      dropout: 0.0
+      use_attn_bias: true
+
+    video_adapter:
+      clip_model_name: /userspace/tfv/exp/models_weights/clip-vit-large-patch14-336  # CLIP model for video adapter
+      bucket_size: 24          # Spatial patch (frame) size
+      num_frames: 10           # Number of frames per video (for adapter)
+      layernorm_embedding: true
+      add_type_embedding: true
+      dropout: 0.1
+      use_attn_bias: true
+      shrink_alpha: 1.0
+
+    embed_dim: 1536
+    ffn_embed_dim: 6144
+    layers: 40
+    attention_heads: 24
+    normalize_before: true
+    learned_pos: true
+    drop_path_rate: 0.4
+    use_text_moe: true
+    use_video_moe: true
+    use_image_moe: false
+    use_audio_moe: false
+    attention_dropout: 0.0
+    dropout: 0.0
+    activation_fn: gelu
+    magneto_scale_attn: true
+    scale_attn: false
+    scale_fc: true
+    scale_heads: false
+    use_layer_scale: true
+    layer_scale_init_value: 1e-6
+
+  decoder:
+    checkpoint_activations: true
+    text_adapter:
+      bucket_size: 256
+      layernorm_embedding: false
+      add_type_embedding: false
+      shrink_alpha: 1.0
+      dropout: 0.0
+      use_attn_bias: false
+
+    video_adapter:
+      clip_model_name: /userspace/tfv/exp/models_weights/clip-vit-large-patch14-336  # CLIP model for video adapter in decoder
+      bucket_size: 24
+      num_frames: 10
+      layernorm_embedding: true
+      add_type_embedding: true
+      dropout: 0.1
+      use_attn_bias: false
+      shrink_alpha: 1.0
+
+    embed_dim: 768
+    ffn_embed_dim: 2048
+    layers: 2
+    attention_heads: 12
+    normalize_before: true
+    learned_pos: true
+    drop_path_rate: 0.0
+    use_text_moe: true
+    use_video_moe: true
+    use_image_moe: false
+    use_audio_moe: false
+    attention_dropout: 0.0
+    dropout: 0.0
+    activation_fn: gelu
+    magneto_scale_attn: true
+    scale_attn: false
+    scale_fc: true
+    scale_heads: false
+    use_layer_scale: false
+    layer_scale_init_value: 1e-6

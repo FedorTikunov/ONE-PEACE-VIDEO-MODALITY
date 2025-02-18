@@ -72,19 +72,19 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
         cfg.encoder.use_image_moe = False
         cfg.encoder.use_audio_moe = False
         cfg.encoder.use_video_moe = False
-        if self.head_type in ('text', 'vl', 'al'):
+        if self.head_type in ('text', 'vl', 'al', 'vid', 'val', 'vidval'):
             cfg.encoder.use_text_moe = True
-        if self.head_type in ('image', 'vl'):
+        if self.head_type in ('image', 'vl', 'val', 'vidval'):
             cfg.encoder.use_image_moe = True
-        if self.head_type in ('audio', 'al'):
+        if self.head_type in ('audio', 'al', 'val', 'vidval'):
             cfg.encoder.use_audio_moe = True
-        if self.head_type in ('video', 'vl', 'val'):
+        if self.head_type in ('video', 'vid', 'val', 'vidval'):
             cfg.encoder.use_video_moe = True
-
-        use_text_norm = self.head_type in ('text', 'vl', 'al')
-        use_image_norm = self.head_type in ('image', 'vl')
-        use_audio_norm = self.head_type in ('audio', 'al')
-        use_video_norm = self.head_type in ('video', 'vl', 'val')
+    
+        use_text_norm = self.head_type in ('text', 'vl', 'al', 'vid', 'val', 'vidval')
+        use_image_norm = self.head_type in ('image', 'vl',  'val', 'vidval')
+        use_audio_norm = self.head_type in ('audio', 'al',  'val', 'vidval')
+        use_video_norm = self.head_type in ('video', 'vid',  'val', 'vidval')
         self.encoder_wrapper = ModelWrapper(
             cfg.encoder,
             src_dict,
@@ -217,11 +217,11 @@ class OnePeaceClassifyModel(OnePeaceBaseModel):
 
 
         for param_name in list(state_dict.keys()):
-            if self.head_type not in ('text', 'vl', 'al', 'val') and 'text_' in param_name:
+            if self.head_type not in ('text', 'vl', 'al', 'vid', 'val', 'vidval') and 'text_' in param_name:
                 del state_dict[param_name]
-            elif self.head_type not in ('image', 'vl', 'val') and 'image_' in param_name:
+            elif self.head_type not in ('image', 'vl',  'val', 'vidval') and 'image_' in param_name:
                 del state_dict[param_name]
-            elif self.head_type not in ('audio', 'al', 'val') and 'audio_' in param_name:
+            elif self.head_type not in ('audio', 'al',  'val', 'vidval') and 'audio_' in param_name:
                 del state_dict[param_name]
-            elif self.head_type not in ('video', 'vl', 'val') and 'video_' in param_name:
+            elif self.head_type not in ('video', 'vid', 'val',  'vidval') and 'video_' in param_name:
                 del state_dict[param_name]

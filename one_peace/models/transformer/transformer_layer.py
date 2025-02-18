@@ -219,11 +219,10 @@ class TransformerEncoderLayer(nn.Module):
             text_x = self.text_ffn(x[:text_seq_len, :, :])
             audio_x = self.audio_ffn(x[-audio_seq_len:, :, :])
             x = torch.cat([text_x, audio_x], dim=0)
-        elif encoder_type == 'val':
+        elif encoder_type == 'vid':
             text_x = self.text_ffn(x[:text_seq_len, :, :])
-            audio_x = self.audio_ffn(x[text_seq_len:text_seq_len + audio_seq_len, :, :])
             video_x = self.video_ffn(x[-video_seq_len:, :, :])
-            x = torch.cat([text_x, audio_x, video_x], dim=0)
+            x = torch.cat([text_x, video_x], dim=0)
         else:
             raise NotImplementedError
         x = fused_dropout_res(

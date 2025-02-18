@@ -31,6 +31,7 @@ class OnePeacePretrainConfig(UnifyModelConfig):
     reset_logit_scale: bool = False
     logit_scale_init: float = 1 / 0.07
     stage2_pretrain: bool = False
+    stage3_pretrain: bool = False
 
 
 @register_model("one_peace_pretrain", dataclass=OnePeacePretrainConfig)
@@ -41,10 +42,11 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
 
         enc_embed_dim = cfg.encoder.embed_dim
         dec_embed_dim = cfg.decoder.embed_dim
+        print("src_dict:", src_dict)
         self.encoder_wrapper = ModelWrapper(cfg.encoder, src_dict)
         self.decoder_wrapper = ModelWrapper(cfg.decoder)
         self.logit_scale = nn.Parameter(torch.ones([]) * math.log(cfg.logit_scale_init))
-
+        
         if cfg.encoder.use_text_moe:
             self.text_proj = Linear(enc_embed_dim, enc_embed_dim)
         if cfg.encoder.use_image_moe:
@@ -112,6 +114,15 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
             for layer in self.encoder_wrapper.fusion_model.layers:
                 layer.audio_ffn.requires_grad_(True)
 
+        if cfg.stage3_pretrain:
+            self.text_proj.requires_grad_(False)
+            self.encoder_wrapper.requires_grad_(False)
+            self.encoder_wrapper.video_adapter.requires_grad_(True)
+            self.encoder_wrapper.fusion_model.video_layer_norm.requires_grad_(True)
+            for layer in self.encoder_wrapper.fusion_model.layers:
+                layer.video_ffn.requires_grad_(True)
+
+
     def forward(
         self,
         src_tokens: Optional[torch.Tensor] = None,
@@ -122,6 +133,7 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
         audio_padding_masks: Optional[torch.Tensor] = None,
         audio_preserve_ids: Optional[torch.Tensor] = None,
         src_videos: Optional[torch.Tensor] = None,
+        video_preserve_ids: Optional[torch.Tensor] = None,
         encoder_type: str = None,
         return_logit_scale: bool = False
     ):
@@ -134,11 +146,11 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
             enc_text_features, enc_image_features, enc_audio_features, enc_video_features = self.encoder_wrapper(
                 src_tokens=src_tokens, text_preserve_ids=text_preserve_ids,
                 src_images=src_images, image_preserve_ids=image_preserve_ids,
-                src_audios=src_audios, audio_padding_masks=audio_padding_masks, audio_preserve_ids=audio_preserve_ids, src_videos=src_videos,
+                src_audios=src_audios, audio_padding_masks=audio_padding_masks, audio_preserve_ids=audio_preserve_ids, src_videos=src_videos, video_preserve_ids=video_preserve_ids,
                 encoder_type=encoder_type
             )
 
-            if text_preserve_ids is not None or image_preserve_ids is not None or audio_preserve_ids is not None:
+            if text_preserve_ids is not None or image_preserve_ids is not None or audio_preserve_ids is not None or video_preserve_ids is not None:
                 text_preserve_embed = self.decoder_text_embed(
                     enc_text_features) if enc_text_features is not None else None
                 image_preserve_embed = self.decoder_image_embed(
@@ -197,13 +209,17 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
                 elif encoder_type == 'al':
                     return enc_text_features, enc_audio_features
                 elif encoder_type == 'val':
-                    return enc_text_features, enc_audio_features, enc_video_features
+                    return enc_text_features, enc_image_features, enc_audio_features
+                elif encoder_type == 'vid':
+                    return enc_text_features, enc_video_features
+                elif encoder_type == 'vidval':
+                    return enc_text_features, enc_image_features, enc_audio_features, enc_video_features
                 else:
                     raise NotImplementedError
 
     def upgrade_state_dict_named(self, state_dict, name):
         super().upgrade_state_dict_named(state_dict, name)
-
+        print("state_dict: ", state_dict)
         if self.cfg.reset_logit_scale:
             del state_dict['logit_scale']
         if self.cfg.stage2_pretrain:
@@ -212,6 +228,19 @@ class OnePeacePretrainModel(OnePeaceBaseModel):
             del state_dict['image_mask_head.bias']
             for param_name in list(state_dict.keys()):
                 if 'image_' in param_name:
+                    del state_dict[param_name]
+        if self.cfg.stage3_pretrain:
+            for key in ['image_mask_token', 'image_mask_head.weight', 'image_mask_head.bias']:
+                if key in state_dict:
+                    del state_dict[key]
+            for param_name in list(state_dict.keys()):
+                if 'image_' in param_name:
+                    del state_dict[param_name]
+            for key in ['audio_mask_token', 'audio_mask_head.weight', 'audio_mask_head.bias']:
+                if key in state_dict:
+                    del state_dict[key]
+            for param_name in list(state_dict.keys()):
+                if 'audio_' in param_name:
                     del state_dict[param_name]
 
         prefix = name + "." if name != "" else ""
